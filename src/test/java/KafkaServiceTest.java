@@ -14,5 +14,65 @@
  * limitations under the License.
  *
  */
+
+import net.uncontended.precipice.ServiceProperties;
+import net.uncontended.precipice.Status;
+import net.uncontended.precipice.concurrent.PrecipiceFuture;
+import net.uncontended.precipice.metrics.Metric;
+import org.apache.kafka.clients.producer.MockProducer;
+import org.apache.kafka.clients.producer.ProducerRecord;
+import org.apache.kafka.clients.producer.RecordMetadata;
+import org.apache.kafka.common.errors.ApiException;
+import org.apache.kafka.common.errors.NetworkException;
+import org.junit.Before;
+import org.junit.Test;
+import org.mockito.MockitoAnnotations;
+
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+
+import static org.junit.Assert.assertEquals;
+
 public class KafkaServiceTest {
+
+    private MockProducer producer = new MockProducer(false);
+    private KafkaService<byte[], byte[]> service;
+
+    @Before
+    public void setUp() {
+        MockitoAnnotations.initMocks(this);
+        service = new KafkaService<>("Kafka", new ServiceProperties(), producer);
+
+    }
+
+    @Test
+    public void testSuccessfulSend() {
+        ProducerRecord<byte[], byte[]> producerRecord = new ProducerRecord<>("topic", "key".getBytes(), "value".getBytes());
+
+        PrecipiceFuture<RecordMetadata> future = service.sendRecordAction(producerRecord);
+
+        assertEquals(Status.PENDING, future.getStatus());
+
+        producer.completeNext();
+
+        assertEquals(Status.SUCCESS, future.getStatus());
+        assertEquals(1, service.getActionMetrics().getMetricCountForTimePeriod(Metric.SUCCESS, 1, TimeUnit.SECONDS));
+    }
+
+    @Test
+    public void testFailedSend() {
+        ProducerRecord<byte[], byte[]> producerRecord = new ProducerRecord<>("topic", "key".getBytes(), "value".getBytes());
+
+        PrecipiceFuture<RecordMetadata> future = service.sendRecordAction(producerRecord);
+
+        assertEquals(Status.PENDING, future.getStatus());
+
+        NetworkException e = new NetworkException();
+        producer.errorNext(e);
+
+        assertEquals(Status.ERROR, future.getStatus());
+        assertEquals(e, future.error());
+        assertEquals(1, service.getActionMetrics().getMetricCountForTimePeriod(Metric.ERROR, 1, TimeUnit.SECONDS));
+    }
 }

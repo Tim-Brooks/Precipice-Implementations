@@ -25,16 +25,16 @@ import net.uncontended.precipice.concurrent.PrecipicePromise;
 import net.uncontended.precipice.metrics.Metric;
 import net.uncontended.precipice.timeout.ActionTimeoutException;
 import org.apache.kafka.clients.producer.Callback;
-import org.apache.kafka.clients.producer.KafkaProducer;
+import org.apache.kafka.clients.producer.Producer;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.clients.producer.RecordMetadata;
 import org.apache.kafka.common.errors.TimeoutException;
 
 public class KafkaService<K, V> extends AbstractService implements AsyncService {
 
-    private final KafkaProducer<K, V> producer;
+    private final Producer<K, V> producer;
 
-    public KafkaService(String name, ServiceProperties properties, KafkaProducer<K, V> producer) {
+    public KafkaService(String name, ServiceProperties properties, Producer<K, V> producer) {
         super(name, properties.circuitBreaker(), properties.actionMetrics(), properties.semaphore());
         this.producer = producer;
     }
