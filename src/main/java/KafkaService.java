@@ -28,6 +28,7 @@ import org.apache.kafka.clients.producer.Callback;
 import org.apache.kafka.clients.producer.Producer;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.clients.producer.RecordMetadata;
+import org.apache.kafka.common.KafkaException;
 import org.apache.kafka.common.errors.TimeoutException;
 
 public class KafkaService<K, V> extends AbstractService implements AsyncService {
@@ -56,16 +57,11 @@ public class KafkaService<K, V> extends AbstractService implements AsyncService 
         acquirePermitOrRejectIfActionNotAllowed();
 
         final KafkaAction<T, K, V> kafkaAction = (KafkaAction<T, K, V>) action;
-        producer.send(kafkaAction.getRecord(), new Callback() {
-            @Override
-            public void onCompletion(RecordMetadata metadata, Exception exception) {
-                try {
-                    handleResult(promise, kafkaAction, metadata, exception);
-                } finally {
-                    semaphore.releasePermit();
-                }
-            }
-        });
+        try {
+            producer.send(kafkaAction.getRecord(), new CompletingCallback<>(promise, kafkaAction));
+        } catch (KafkaException e) {
+            promise.completeExceptionally(e);
+        }
     }
 
     @Override
@@ -97,6 +93,25 @@ public class KafkaService<K, V> extends AbstractService implements AsyncService 
             } else {
                 actionMetrics.incrementMetricCount(Metric.ERROR);
                 promise.completeExceptionally(exception);
+            }
+        }
+    }
+
+    private class CompletingCallback<T> implements Callback {
+        private final PrecipicePromise<T> promise;
+        private final KafkaAction<T, K, V> kafkaAction;
+
+        public CompletingCallback(PrecipicePromise<T> promise, KafkaAction<T, K, V> kafkaAction) {
+            this.promise = promise;
+            this.kafkaAction = kafkaAction;
+        }
+
+        @Override
+        public void onCompletion(RecordMetadata metadata, Exception exception) {
+            try {
+                handleResult(promise, kafkaAction, metadata, exception);
+            } finally {
+                semaphore.releasePermit();
             }
         }
     }
