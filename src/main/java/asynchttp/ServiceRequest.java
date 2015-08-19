@@ -15,4 +15,26 @@
  *
  */
 
-rootProject.name = 'Precipice-Implementations'
+package asynchttp;
+
+import com.ning.http.client.Request;
+import com.ning.http.client.Response;
+import net.uncontended.precipice.ResilientAction;
+
+abstract class ServiceRequest<T> implements ResilientAction<T> {
+
+    protected final Request request;
+    protected volatile Response response;
+
+    public ServiceRequest(Request request) {
+        this.request = request;
+    }
+
+    public Request getRequest() {
+        return request;
+    }
+
+    public void setResponse(Response response) {
+        this.response = response;
+    }
+}
