@@ -44,7 +44,6 @@ public class KafkaServiceTest {
 
     @Before
     public void setUp() {
-        MockitoAnnotations.initMocks(this);
         service = new KafkaService<>("Kafka", new ServiceProperties(), producer);
 
     }
