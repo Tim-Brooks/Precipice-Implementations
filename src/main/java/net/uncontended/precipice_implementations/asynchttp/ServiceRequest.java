@@ -15,26 +15,26 @@
  *
  */
 
-package kafka;
+package net.uncontended.precipice_implementations.asynchttp;
 
+import com.ning.http.client.Request;
+import com.ning.http.client.Response;
 import net.uncontended.precipice.ResilientAction;
-import org.apache.kafka.clients.producer.ProducerRecord;
-import org.apache.kafka.clients.producer.RecordMetadata;
 
-abstract class KafkaAction<T, K, V> implements ResilientAction<T> {
+abstract class ServiceRequest<T> implements ResilientAction<T> {
 
-    protected final ProducerRecord<K, V> record;
-    protected RecordMetadata recordMetadata;
+    protected final Request request;
+    protected volatile Response response;
 
-    public KafkaAction(ProducerRecord<K, V> record) {
-        this.record = record;
+    public ServiceRequest(Request request) {
+        this.request = request;
     }
 
-    public ProducerRecord<K, V> getRecord() {
-        return record;
+    public Request getRequest() {
+        return request;
     }
 
-    public void setRecordMetadata(RecordMetadata recordMetadata) {
-        this.recordMetadata = recordMetadata;
+    public void setResponse(Response response) {
+        this.response = response;
     }
 }

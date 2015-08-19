@@ -15,7 +15,7 @@
  *
  */
 
-package kafka;
+package net.uncontended.precipice_implementations.kafka;
 
 import net.uncontended.precipice.AbstractService;
 import net.uncontended.precipice.AsyncService;

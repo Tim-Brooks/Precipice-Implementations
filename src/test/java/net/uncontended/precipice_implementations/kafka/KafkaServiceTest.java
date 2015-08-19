@@ -15,7 +15,7 @@
  *
  */
 
-package kafka;
+package net.uncontended.precipice_implementations.kafka;
 
 import net.uncontended.precipice.ServiceProperties;
 import net.uncontended.precipice.Status;
@@ -27,7 +27,6 @@ import org.apache.kafka.common.errors.NetworkException;
 import org.apache.kafka.common.errors.TimeoutException;
 import org.junit.Before;
 import org.junit.Test;
-import org.mockito.MockitoAnnotations;
 
 import java.util.concurrent.TimeUnit;
 

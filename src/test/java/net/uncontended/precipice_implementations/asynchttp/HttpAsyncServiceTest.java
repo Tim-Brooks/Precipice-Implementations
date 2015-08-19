@@ -15,7 +15,7 @@
  *
  */
 
-package asynchttp;
+package net.uncontended.precipice_implementations.asynchttp;
 
 import com.ning.http.client.AsyncCompletionHandler;
 import com.ning.http.client.AsyncHttpClient;
