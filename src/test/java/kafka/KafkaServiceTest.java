@@ -1,4 +1,4 @@
-package kafka;/*
+/*
  * Copyright 2014 Timothy Brooks
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -15,7 +15,8 @@ package kafka;/*
  *
  */
 
-import kafka.KafkaService;
+package kafka;
+
 import net.uncontended.precipice.ServiceProperties;
 import net.uncontended.precipice.Status;
 import net.uncontended.precipice.concurrent.PrecipiceFuture;

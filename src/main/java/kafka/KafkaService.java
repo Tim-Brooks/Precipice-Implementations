@@ -1,4 +1,4 @@
-package kafka;/*
+/*
  * Copyright 2014 Timothy Brooks
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -15,6 +15,8 @@ package kafka;/*
  *
  */
 
+package kafka;
+
 import net.uncontended.precipice.AbstractService;
 import net.uncontended.precipice.AsyncService;
 import net.uncontended.precipice.ResilientAction;
@@ -22,6 +24,8 @@ import net.uncontended.precipice.ServiceProperties;
 import net.uncontended.precipice.concurrent.Eventual;
 import net.uncontended.precipice.concurrent.PrecipiceFuture;
 import net.uncontended.precipice.concurrent.PrecipicePromise;
+import net.uncontended.precipice.concurrent.PrecipiceSemaphore;
+import net.uncontended.precipice.metrics.ActionMetrics;
 import net.uncontended.precipice.metrics.Metric;
 import net.uncontended.precipice.timeout.ActionTimeoutException;
 import org.apache.kafka.clients.producer.Callback;
@@ -57,7 +61,7 @@ public class KafkaService<K, V> extends AbstractService implements AsyncService 
 
         final KafkaAction<T, K, V> kafkaAction = (KafkaAction<T, K, V>) action;
         try {
-            producer.send(kafkaAction.getRecord(), new CompletingCallback<>(promise, kafkaAction));
+            producer.send(kafkaAction.getRecord(), new CompletingCallback<>(actionMetrics, semaphore, promise, kafkaAction));
         } catch (Exception e) {
             actionMetrics.incrementMetricCount(Metric.ERROR);
             promise.completeExceptionally(e);
@@ -70,38 +74,16 @@ public class KafkaService<K, V> extends AbstractService implements AsyncService 
         producer.close();
     }
 
-    private <T> void handleResult(PrecipicePromise<T> promise, KafkaAction<T, K, V> kafkaAction, RecordMetadata
-            metadata, Exception exception) {
-        if (exception == null) {
-            kafkaAction.setRecordMetadata(metadata);
-
-            try {
-                T result = kafkaAction.run();
-                actionMetrics.incrementMetricCount(Metric.SUCCESS);
-                promise.complete(result);
-            } catch (ActionTimeoutException e) {
-                actionMetrics.incrementMetricCount(Metric.TIMEOUT);
-                promise.completeWithTimeout();
-            } catch (Exception e) {
-                actionMetrics.incrementMetricCount(Metric.ERROR);
-                promise.completeExceptionally(e);
-            }
-        } else {
-            if (exception instanceof TimeoutException) {
-                actionMetrics.incrementMetricCount(Metric.TIMEOUT);
-                promise.completeWithTimeout();
-            } else {
-                actionMetrics.incrementMetricCount(Metric.ERROR);
-                promise.completeExceptionally(exception);
-            }
-        }
-    }
-
-    private class CompletingCallback<T> implements Callback {
+    private static class CompletingCallback<T> implements Callback {
+        private final ActionMetrics actionMetrics;
+        private final PrecipiceSemaphore semaphore;
         private final PrecipicePromise<T> promise;
-        private final KafkaAction<T, K, V> kafkaAction;
+        private final KafkaAction<T, ?, ?> kafkaAction;
 
-        public CompletingCallback(PrecipicePromise<T> promise, KafkaAction<T, K, V> kafkaAction) {
+        public CompletingCallback(ActionMetrics actionMetrics, PrecipiceSemaphore semaphore,
+                                  PrecipicePromise<T> promise, KafkaAction<T, ?, ?> kafkaAction) {
+            this.actionMetrics = actionMetrics;
+            this.semaphore = semaphore;
             this.promise = promise;
             this.kafkaAction = kafkaAction;
         }
@@ -112,6 +94,33 @@ public class KafkaService<K, V> extends AbstractService implements AsyncService 
                 handleResult(promise, kafkaAction, metadata, exception);
             } finally {
                 semaphore.releasePermit();
+            }
+        }
+
+        private void handleResult(PrecipicePromise<T> promise, KafkaAction<T, ?, ?> kafkaAction, RecordMetadata
+                metadata, Exception exception) {
+            if (exception == null) {
+                kafkaAction.setRecordMetadata(metadata);
+
+                try {
+                    T result = kafkaAction.run();
+                    actionMetrics.incrementMetricCount(Metric.SUCCESS);
+                    promise.complete(result);
+                } catch (ActionTimeoutException e) {
+                    actionMetrics.incrementMetricCount(Metric.TIMEOUT);
+                    promise.completeWithTimeout();
+                } catch (Exception e) {
+                    actionMetrics.incrementMetricCount(Metric.ERROR);
+                    promise.completeExceptionally(e);
+                }
+            } else {
+                if (exception instanceof TimeoutException) {
+                    actionMetrics.incrementMetricCount(Metric.TIMEOUT);
+                    promise.completeWithTimeout();
+                } else {
+                    actionMetrics.incrementMetricCount(Metric.ERROR);
+                    promise.completeExceptionally(exception);
+                }
             }
         }
     }

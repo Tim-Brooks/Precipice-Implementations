@@ -1,4 +1,4 @@
-package kafka;/*
+/*
  * Copyright 2014 Timothy Brooks
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -14,6 +14,8 @@ package kafka;/*
  * limitations under the License.
  *
  */
+
+package kafka;
 
 import net.uncontended.precipice.ResilientAction;
 import org.apache.kafka.clients.producer.ProducerRecord;
