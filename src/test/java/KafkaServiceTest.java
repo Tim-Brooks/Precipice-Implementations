@@ -19,9 +19,8 @@ import net.uncontended.precipice.ServiceProperties;
 import net.uncontended.precipice.Status;
 import net.uncontended.precipice.concurrent.PrecipiceFuture;
 import net.uncontended.precipice.metrics.Metric;
-import org.apache.kafka.clients.producer.MockProducer;
-import org.apache.kafka.clients.producer.ProducerRecord;
-import org.apache.kafka.clients.producer.RecordMetadata;
+import org.apache.kafka.clients.producer.*;
+import org.apache.kafka.common.KafkaException;
 import org.apache.kafka.common.errors.NetworkException;
 import org.apache.kafka.common.errors.TimeoutException;
 import org.junit.Before;
@@ -31,6 +30,10 @@ import org.mockito.MockitoAnnotations;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.Assert.assertEquals;
+import static org.mockito.Matchers.any;
+import static org.mockito.Matchers.eq;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 public class KafkaServiceTest {
 
@@ -87,5 +90,20 @@ public class KafkaServiceTest {
 
         assertEquals(Status.TIMEOUT, future.getStatus());
         assertEquals(1, service.getActionMetrics().getMetricCountForTimePeriod(Metric.TIMEOUT, 1, TimeUnit.SECONDS));
+    }
+
+    @Test
+    public void testKafkaException() {
+        Producer<byte[], byte[]> producer = mock(Producer.class);
+        service = new KafkaService<>("Kafka", new ServiceProperties(), producer);
+
+        ProducerRecord<byte[], byte[]> producerRecord = new ProducerRecord<>("topic", "key".getBytes(), "value".getBytes());
+
+        when(producer.send(eq(producerRecord), any(Callback.class))).thenThrow(new KafkaException());
+
+        PrecipiceFuture<RecordMetadata> future = service.sendRecordAction(producerRecord);
+
+        assertEquals(Status.ERROR, future.getStatus());
+        assertEquals(1, service.getActionMetrics().getMetricCountForTimePeriod(Metric.ERROR, 1, TimeUnit.SECONDS));
     }
 }

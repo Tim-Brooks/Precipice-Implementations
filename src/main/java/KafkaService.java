@@ -59,7 +59,8 @@ public class KafkaService<K, V> extends AbstractService implements AsyncService 
         final KafkaAction<T, K, V> kafkaAction = (KafkaAction<T, K, V>) action;
         try {
             producer.send(kafkaAction.getRecord(), new CompletingCallback<>(promise, kafkaAction));
-        } catch (KafkaException e) {
+        } catch (Exception e) {
+            actionMetrics.incrementMetricCount(Metric.ERROR);
             promise.completeExceptionally(e);
         }
     }
