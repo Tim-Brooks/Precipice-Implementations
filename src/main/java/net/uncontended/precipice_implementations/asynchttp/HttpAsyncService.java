@@ -62,8 +62,8 @@ public class HttpAsyncService extends AbstractService implements AsyncService {
         acquirePermitOrRejectIfActionNotAllowed();
 
         final ServiceRequest<T> asyncRequest = (ServiceRequest<T>) action;
-        client.executeRequest(asyncRequest.getRequest(), new CompletionHandler<>(actionMetrics, semaphore,
-                asyncRequest, promise));
+        client.executeRequest(asyncRequest.getRequest(), new CompletionHandler<>(System.nanoTime(), actionMetrics,
+                semaphore, asyncRequest, promise));
     }
 
     @Override
@@ -83,13 +83,15 @@ public class HttpAsyncService extends AbstractService implements AsyncService {
     }
 
     private static class CompletionHandler<T> extends AsyncCompletionHandler<Void> {
+        private final long startTime;
         private final ServiceRequest<T> asyncRequest;
         private final PrecipicePromise<T> promise;
         private final PrecipiceSemaphore semaphore;
         private final ActionMetrics actionMetrics;
 
-        public CompletionHandler(ActionMetrics actionMetrics, PrecipiceSemaphore semaphore,
+        public CompletionHandler(long startTime, ActionMetrics actionMetrics, PrecipiceSemaphore semaphore,
                                  ServiceRequest<T> asyncRequest, PrecipicePromise<T> promise) {
+            this.startTime = startTime;
             this.actionMetrics = actionMetrics;
             this.asyncRequest = asyncRequest;
             this.promise = promise;
@@ -101,26 +103,31 @@ public class HttpAsyncService extends AbstractService implements AsyncService {
             asyncRequest.setResponse(response);
             try {
                 T result = asyncRequest.run();
-                actionMetrics.incrementMetricCount(Metric.SUCCESS);
+                long endTime = System.nanoTime();
+                actionMetrics.incrementMetricAndRecordLatency(Metric.SUCCESS, endTime - startTime, endTime);
                 promise.complete(result);
             } catch (ActionTimeoutException e) {
-                actionMetrics.incrementMetricCount(Metric.TIMEOUT);
+                long endTime = System.nanoTime();
+                actionMetrics.incrementMetricAndRecordLatency(Metric.TIMEOUT, endTime - startTime, endTime);
                 promise.completeWithTimeout();
             } catch (Exception e) {
-                actionMetrics.incrementMetricCount(Metric.ERROR);
+                long endTime = System.nanoTime();
+                actionMetrics.incrementMetricAndRecordLatency(Metric.ERROR, endTime - startTime, endTime);
                 promise.completeExceptionally(e);
+            } finally {
+                semaphore.releasePermit();
             }
-            semaphore.releasePermit();
             return null;
         }
 
         @Override
         public void onThrowable(Throwable t) {
+            long endTime = System.nanoTime();
             if (t instanceof TimeoutException) {
-                actionMetrics.incrementMetricCount(Metric.TIMEOUT);
+                actionMetrics.incrementMetricAndRecordLatency(Metric.TIMEOUT, endTime - startTime, endTime);
                 promise.completeWithTimeout();
             } else {
-                actionMetrics.incrementMetricCount(Metric.ERROR);
+                actionMetrics.incrementMetricAndRecordLatency(Metric.ERROR, endTime - startTime, endTime);
                 promise.completeExceptionally(t);
             }
             semaphore.releasePermit();
