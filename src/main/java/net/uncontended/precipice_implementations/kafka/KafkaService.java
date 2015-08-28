@@ -60,9 +60,12 @@ public class KafkaService<K, V> extends AbstractService implements AsyncService 
         acquirePermitOrRejectIfActionNotAllowed();
 
         final KafkaAction<T, K, V> kafkaAction = (KafkaAction<T, K, V>) action;
+        long startTime = System.nanoTime();
         try {
-            producer.send(kafkaAction.getRecord(), new CompletingCallback<>(actionMetrics, semaphore, promise, kafkaAction));
+            producer.send(kafkaAction.getRecord(), new CompletingCallback<>(startTime, actionMetrics, semaphore,
+                    promise, kafkaAction));
         } catch (Exception e) {
+            // Do not record latency due to fail fast.
             actionMetrics.incrementMetricCount(Metric.ERROR);
             promise.completeExceptionally(e);
         }
@@ -75,13 +78,15 @@ public class KafkaService<K, V> extends AbstractService implements AsyncService 
     }
 
     private static class CompletingCallback<T> implements Callback {
+        private final long startTime;
         private final ActionMetrics actionMetrics;
         private final PrecipiceSemaphore semaphore;
         private final PrecipicePromise<T> promise;
         private final KafkaAction<T, ?, ?> kafkaAction;
 
-        public CompletingCallback(ActionMetrics actionMetrics, PrecipiceSemaphore semaphore,
+        public CompletingCallback(long startTime, ActionMetrics actionMetrics, PrecipiceSemaphore semaphore,
                                   PrecipicePromise<T> promise, KafkaAction<T, ?, ?> kafkaAction) {
+            this.startTime = startTime;
             this.actionMetrics = actionMetrics;
             this.semaphore = semaphore;
             this.promise = promise;
@@ -91,34 +96,38 @@ public class KafkaService<K, V> extends AbstractService implements AsyncService 
         @Override
         public void onCompletion(RecordMetadata metadata, Exception exception) {
             try {
-                handleResult(promise, kafkaAction, metadata, exception);
+                handleResult(startTime, promise, kafkaAction, metadata, exception);
             } finally {
                 semaphore.releasePermit();
             }
         }
 
-        private void handleResult(PrecipicePromise<T> promise, KafkaAction<T, ?, ?> kafkaAction, RecordMetadata
-                metadata, Exception exception) {
+        private void handleResult(long startTime, PrecipicePromise<T> promise, KafkaAction<T, ?, ?> kafkaAction,
+                                  RecordMetadata metadata, Exception exception) {
             if (exception == null) {
                 kafkaAction.setRecordMetadata(metadata);
 
                 try {
                     T result = kafkaAction.run();
-                    actionMetrics.incrementMetricCount(Metric.SUCCESS);
+                    long endTime = System.nanoTime();
+                    actionMetrics.incrementMetricAndRecordLatency(Metric.SUCCESS, endTime - startTime, endTime);
                     promise.complete(result);
                 } catch (ActionTimeoutException e) {
-                    actionMetrics.incrementMetricCount(Metric.TIMEOUT);
+                    long endTime = System.nanoTime();
+                    actionMetrics.incrementMetricAndRecordLatency(Metric.TIMEOUT, endTime - startTime, endTime);
                     promise.completeWithTimeout();
                 } catch (Exception e) {
-                    actionMetrics.incrementMetricCount(Metric.ERROR);
+                    long endTime = System.nanoTime();
+                    actionMetrics.incrementMetricAndRecordLatency(Metric.ERROR, endTime - startTime, endTime);
                     promise.completeExceptionally(e);
                 }
             } else {
+                long endTime = System.nanoTime();
                 if (exception instanceof TimeoutException) {
-                    actionMetrics.incrementMetricCount(Metric.TIMEOUT);
+                    actionMetrics.incrementMetricAndRecordLatency(Metric.TIMEOUT, endTime - startTime, endTime);
                     promise.completeWithTimeout();
                 } else {
-                    actionMetrics.incrementMetricCount(Metric.ERROR);
+                    actionMetrics.incrementMetricAndRecordLatency(Metric.ERROR, endTime - startTime, endTime);
                     promise.completeExceptionally(exception);
                 }
             }
