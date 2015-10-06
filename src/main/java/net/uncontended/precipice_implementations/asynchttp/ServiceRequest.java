@@ -24,7 +24,7 @@ import net.uncontended.precipice.ResilientAction;
 abstract class ServiceRequest<T> implements ResilientAction<T> {
 
     protected final Request request;
-    protected volatile Response response;
+    protected Response response;
 
     public ServiceRequest(Request request) {
         this.request = request;
