@@ -116,7 +116,7 @@ public class HttpAsyncService extends AbstractService implements AsyncService {
                 long endTime = System.nanoTime();
                 actionMetrics.incrementMetricCount(Metric.TIMEOUT, endTime);
                 latencyMetrics.recordLatency(Metric.TIMEOUT, endTime - startTime, endTime);
-                promise.completeWithTimeout();
+                promise.completeWithTimeout(e);
             } catch (Exception e) {
                 long endTime = System.nanoTime();
                 actionMetrics.incrementMetricCount(Metric.ERROR, endTime);
@@ -134,7 +134,7 @@ public class HttpAsyncService extends AbstractService implements AsyncService {
             if (t instanceof TimeoutException) {
                 actionMetrics.incrementMetricCount(Metric.TIMEOUT, endTime);
                 latencyMetrics.recordLatency(Metric.TIMEOUT, endTime - startTime, endTime);
-                promise.completeWithTimeout();
+                promise.completeWithTimeout(new ActionTimeoutException(t));
             } else {
                 actionMetrics.incrementMetricCount(Metric.ERROR, endTime);
                 latencyMetrics.recordLatency(Metric.ERROR, endTime - startTime, endTime);
