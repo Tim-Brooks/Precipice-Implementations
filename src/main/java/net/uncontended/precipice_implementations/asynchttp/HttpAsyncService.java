@@ -40,6 +40,7 @@ import java.util.concurrent.TimeoutException;
 public class HttpAsyncService extends AbstractService implements AsyncService {
 
     private final AsyncHttpClient client;
+    private static final NoOpTransformer noOpTransformer = new NoOpTransformer();
 
     public HttpAsyncService(String name, ServiceProperties properties, AsyncHttpClient client) {
         super(name, properties.circuitBreaker(), properties.actionMetrics(), properties.latencyMetrics(),
@@ -48,7 +49,11 @@ public class HttpAsyncService extends AbstractService implements AsyncService {
     }
 
     public PrecipiceFuture<Response> submitRequest(Request request) {
-        return submit(new ResponseAction(request), -1L);
+        return submit(new ResponseAction<>(request, noOpTransformer), -1L);
+    }
+
+    public <T> PrecipiceFuture<T> submitRequest(Request request, Transformer<T> transformer) {
+        return submit(new ResponseAction<>(request, transformer), -1L);
     }
 
     @Override
@@ -73,13 +78,24 @@ public class HttpAsyncService extends AbstractService implements AsyncService {
         isShutdown = true;
     }
 
-    private static class ResponseAction extends ServiceRequest<Response> {
-        public ResponseAction(Request request) {
+    private static class ResponseAction<T> extends ServiceRequest<T> {
+        private final Transformer<T> transformer;
+
+        public ResponseAction(Request request, Transformer<T> transformer) {
             super(request);
+            this.transformer = transformer;
         }
 
         @Override
-        public Response run() throws Exception {
+        public T run() throws Exception {
+            return transformer.transform(response);
+        }
+    }
+
+    private static class NoOpTransformer implements Transformer<Response> {
+
+        @Override
+        public Response transform(Response response) {
             return response;
         }
     }
