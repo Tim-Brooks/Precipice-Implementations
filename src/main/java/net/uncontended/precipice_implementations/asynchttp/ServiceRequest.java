@@ -21,7 +21,7 @@ import com.ning.http.client.Request;
 import com.ning.http.client.Response;
 import net.uncontended.precipice.ResilientAction;
 
-abstract class ServiceRequest<T> implements ResilientAction<T> {
+public abstract class ServiceRequest<T> implements ResilientAction<T> {
 
     protected final Request request;
     protected Response response;

@@ -21,7 +21,7 @@ import net.uncontended.precipice.ResilientAction;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.clients.producer.RecordMetadata;
 
-abstract class KafkaAction<T, K, V> implements ResilientAction<T> {
+public abstract class KafkaAction<T, K, V> implements ResilientAction<T> {
 
     protected final ProducerRecord<K, V> record;
     protected RecordMetadata recordMetadata;
