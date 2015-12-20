@@ -26,6 +26,7 @@ import net.uncontended.precipice.concurrent.PrecipiceFuture;
 import net.uncontended.precipice.concurrent.PrecipicePromise;
 import net.uncontended.precipice.concurrent.PrecipiceSemaphore;
 import net.uncontended.precipice.metrics.ActionMetrics;
+import net.uncontended.precipice.metrics.LatencyMetrics;
 import net.uncontended.precipice.metrics.Metric;
 import net.uncontended.precipice.timeout.ActionTimeoutException;
 import org.apache.kafka.clients.producer.Callback;
@@ -39,7 +40,8 @@ public class KafkaService<K, V> extends AbstractService implements AsyncService 
     private final Producer<K, V> producer;
 
     public KafkaService(String name, ServiceProperties properties, Producer<K, V> producer) {
-        super(name, properties.circuitBreaker(), properties.actionMetrics(), properties.semaphore());
+        super(name, properties.circuitBreaker(), properties.actionMetrics(), properties.latencyMetrics(),
+                properties.semaphore());
         this.producer = producer;
     }
 
@@ -62,8 +64,8 @@ public class KafkaService<K, V> extends AbstractService implements AsyncService 
         final KafkaAction<T, K, V> kafkaAction = (KafkaAction<T, K, V>) action;
         long startTime = System.nanoTime();
         try {
-            producer.send(kafkaAction.getRecord(), new CompletingCallback<>(startTime, actionMetrics, semaphore,
-                    promise, kafkaAction));
+            producer.send(kafkaAction.getRecord(), new CompletingCallback<>(startTime, actionMetrics, latencyMetrics,
+                    semaphore, promise, kafkaAction));
         } catch (Exception e) {
             // Do not record latency due to fail fast.
             actionMetrics.incrementMetricCount(Metric.ERROR);
@@ -73,21 +75,24 @@ public class KafkaService<K, V> extends AbstractService implements AsyncService 
 
     @Override
     public void shutdown() {
-        isShutdown.set(true);
+        isShutdown = true;
         producer.close();
     }
 
     private static class CompletingCallback<T> implements Callback {
         private final long startTime;
         private final ActionMetrics actionMetrics;
+        private final LatencyMetrics latencyMetrics;
         private final PrecipiceSemaphore semaphore;
         private final PrecipicePromise<T> promise;
         private final KafkaAction<T, ?, ?> kafkaAction;
 
-        public CompletingCallback(long startTime, ActionMetrics actionMetrics, PrecipiceSemaphore semaphore,
-                                  PrecipicePromise<T> promise, KafkaAction<T, ?, ?> kafkaAction) {
+        public CompletingCallback(long startTime, ActionMetrics actionMetrics, LatencyMetrics latencyMetrics,
+                                  PrecipiceSemaphore semaphore, PrecipicePromise<T> promise,
+                                  KafkaAction<T, ?, ?> kafkaAction) {
             this.startTime = startTime;
             this.actionMetrics = actionMetrics;
+            this.latencyMetrics = latencyMetrics;
             this.semaphore = semaphore;
             this.promise = promise;
             this.kafkaAction = kafkaAction;
@@ -110,24 +115,29 @@ public class KafkaService<K, V> extends AbstractService implements AsyncService 
                 try {
                     T result = kafkaAction.run();
                     long endTime = System.nanoTime();
-                    actionMetrics.incrementMetricAndRecordLatency(Metric.SUCCESS, endTime - startTime, endTime);
+                    actionMetrics.incrementMetricCount(Metric.SUCCESS, endTime);
+                    latencyMetrics.recordLatency(Metric.SUCCESS, endTime - startTime, endTime);
                     promise.complete(result);
                 } catch (ActionTimeoutException e) {
                     long endTime = System.nanoTime();
-                    actionMetrics.incrementMetricAndRecordLatency(Metric.TIMEOUT, endTime - startTime, endTime);
+                    actionMetrics.incrementMetricCount(Metric.TIMEOUT, endTime);
+                    latencyMetrics.recordLatency(Metric.TIMEOUT, endTime - startTime, endTime);
                     promise.completeWithTimeout();
                 } catch (Exception e) {
                     long endTime = System.nanoTime();
-                    actionMetrics.incrementMetricAndRecordLatency(Metric.ERROR, endTime - startTime, endTime);
+                    actionMetrics.incrementMetricCount(Metric.ERROR, endTime);
+                    latencyMetrics.recordLatency(Metric.ERROR, endTime - startTime, endTime);
                     promise.completeExceptionally(e);
                 }
             } else {
                 long endTime = System.nanoTime();
                 if (exception instanceof TimeoutException) {
-                    actionMetrics.incrementMetricAndRecordLatency(Metric.TIMEOUT, endTime - startTime, endTime);
+                    actionMetrics.incrementMetricCount(Metric.TIMEOUT, endTime);
+                    latencyMetrics.recordLatency(Metric.TIMEOUT, endTime - startTime, endTime);
                     promise.completeWithTimeout();
                 } else {
-                    actionMetrics.incrementMetricAndRecordLatency(Metric.ERROR, endTime - startTime, endTime);
+                    actionMetrics.incrementMetricCount(Metric.ERROR, endTime);
+                    latencyMetrics.recordLatency(Metric.ERROR, endTime - startTime, endTime);
                     promise.completeExceptionally(exception);
                 }
             }

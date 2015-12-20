@@ -30,6 +30,7 @@ import net.uncontended.precipice.concurrent.PrecipiceFuture;
 import net.uncontended.precipice.concurrent.PrecipicePromise;
 import net.uncontended.precipice.concurrent.PrecipiceSemaphore;
 import net.uncontended.precipice.metrics.ActionMetrics;
+import net.uncontended.precipice.metrics.LatencyMetrics;
 import net.uncontended.precipice.metrics.Metric;
 import net.uncontended.precipice.timeout.ActionTimeoutException;
 
@@ -41,7 +42,8 @@ public class HttpAsyncService extends AbstractService implements AsyncService {
     private final AsyncHttpClient client;
 
     public HttpAsyncService(String name, ServiceProperties properties, AsyncHttpClient client) {
-        super(name, properties.circuitBreaker(), properties.actionMetrics(), properties.semaphore());
+        super(name, properties.circuitBreaker(), properties.actionMetrics(), properties.latencyMetrics(),
+                properties.semaphore());
         this.client = client;
     }
 
@@ -63,12 +65,12 @@ public class HttpAsyncService extends AbstractService implements AsyncService {
 
         final ServiceRequest<T> asyncRequest = (ServiceRequest<T>) action;
         client.executeRequest(asyncRequest.getRequest(), new CompletionHandler<>(System.nanoTime(), actionMetrics,
-                semaphore, asyncRequest, promise));
+                latencyMetrics, semaphore, asyncRequest, promise));
     }
 
     @Override
     public void shutdown() {
-        isShutdown.set(true);
+        isShutdown = true;
     }
 
     private static class ResponseAction extends ServiceRequest<Response> {
@@ -84,15 +86,18 @@ public class HttpAsyncService extends AbstractService implements AsyncService {
 
     private static class CompletionHandler<T> extends AsyncCompletionHandler<Void> {
         private final long startTime;
+        private final LatencyMetrics latencyMetrics;
         private final ServiceRequest<T> asyncRequest;
         private final PrecipicePromise<T> promise;
         private final PrecipiceSemaphore semaphore;
         private final ActionMetrics actionMetrics;
 
-        public CompletionHandler(long startTime, ActionMetrics actionMetrics, PrecipiceSemaphore semaphore,
-                                 ServiceRequest<T> asyncRequest, PrecipicePromise<T> promise) {
+        public CompletionHandler(long startTime, ActionMetrics actionMetrics, LatencyMetrics latencyMetrics,
+                                 PrecipiceSemaphore semaphore, ServiceRequest<T> asyncRequest,
+                                 PrecipicePromise<T> promise) {
             this.startTime = startTime;
             this.actionMetrics = actionMetrics;
+            this.latencyMetrics = latencyMetrics;
             this.asyncRequest = asyncRequest;
             this.promise = promise;
             this.semaphore = semaphore;
@@ -104,15 +109,18 @@ public class HttpAsyncService extends AbstractService implements AsyncService {
             try {
                 T result = asyncRequest.run();
                 long endTime = System.nanoTime();
-                actionMetrics.incrementMetricAndRecordLatency(Metric.SUCCESS, endTime - startTime, endTime);
+                actionMetrics.incrementMetricCount(Metric.SUCCESS, endTime);
+                latencyMetrics.recordLatency(Metric.SUCCESS, endTime - startTime, endTime);
                 promise.complete(result);
             } catch (ActionTimeoutException e) {
                 long endTime = System.nanoTime();
-                actionMetrics.incrementMetricAndRecordLatency(Metric.TIMEOUT, endTime - startTime, endTime);
+                actionMetrics.incrementMetricCount(Metric.TIMEOUT, endTime);
+                latencyMetrics.recordLatency(Metric.TIMEOUT, endTime - startTime, endTime);
                 promise.completeWithTimeout();
             } catch (Exception e) {
                 long endTime = System.nanoTime();
-                actionMetrics.incrementMetricAndRecordLatency(Metric.ERROR, endTime - startTime, endTime);
+                actionMetrics.incrementMetricCount(Metric.ERROR, endTime);
+                latencyMetrics.recordLatency(Metric.ERROR, endTime - startTime, endTime);
                 promise.completeExceptionally(e);
             } finally {
                 semaphore.releasePermit();
@@ -124,10 +132,12 @@ public class HttpAsyncService extends AbstractService implements AsyncService {
         public void onThrowable(Throwable t) {
             long endTime = System.nanoTime();
             if (t instanceof TimeoutException) {
-                actionMetrics.incrementMetricAndRecordLatency(Metric.TIMEOUT, endTime - startTime, endTime);
+                actionMetrics.incrementMetricCount(Metric.TIMEOUT, endTime);
+                latencyMetrics.recordLatency(Metric.TIMEOUT, endTime - startTime, endTime);
                 promise.completeWithTimeout();
             } else {
-                actionMetrics.incrementMetricAndRecordLatency(Metric.ERROR, endTime - startTime, endTime);
+                actionMetrics.incrementMetricCount(Metric.ERROR, endTime);
+                latencyMetrics.recordLatency(Metric.ERROR, endTime - startTime, endTime);
                 promise.completeExceptionally(t);
             }
             semaphore.releasePermit();

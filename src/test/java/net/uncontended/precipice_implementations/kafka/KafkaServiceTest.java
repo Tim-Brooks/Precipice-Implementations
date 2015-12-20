@@ -25,6 +25,7 @@ import org.apache.kafka.clients.producer.*;
 import org.apache.kafka.common.KafkaException;
 import org.apache.kafka.common.errors.NetworkException;
 import org.apache.kafka.common.errors.TimeoutException;
+import org.apache.kafka.common.serialization.ByteArraySerializer;
 import org.junit.Before;
 import org.junit.Test;
 
@@ -38,7 +39,7 @@ import static org.mockito.Mockito.when;
 
 public class KafkaServiceTest {
 
-    private MockProducer producer = new MockProducer(false);
+    private MockProducer<byte[], byte[]> producer = new MockProducer<>(false, new ByteArraySerializer(), new ByteArraySerializer());
     private KafkaService<byte[], byte[]> service;
 
     @Before
