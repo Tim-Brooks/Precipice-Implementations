@@ -26,9 +26,9 @@ repositories {
 }
 
 dependencies {
-    compile 'net.uncontended:precipice-core:0.5.2'
-    compile 'org.apache.kafka:kafka-clients:0.9.0.0'
-    compile 'com.ning:async-http-client:1.9.31'
+    compile 'net.uncontended:precipice-core:0.6.1'
+    compile 'org.apache.kafka:kafka-clients:0.10.0.0'
+    compile 'org.asynchttpclient:async-http-client:2.0.5'
     testCompile 'junit:junit:4.12'
     testCompile 'org.mockito:mockito-core:1.10.19'
 }
