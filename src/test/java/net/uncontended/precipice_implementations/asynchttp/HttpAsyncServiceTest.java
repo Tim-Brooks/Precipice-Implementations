@@ -21,7 +21,11 @@ import net.uncontended.precipice.GuardRail;
 import net.uncontended.precipice.GuardRailBuilder;
 import net.uncontended.precipice.concurrent.PrecipiceFuture;
 import net.uncontended.precipice.metrics.MetricCounter;
+import net.uncontended.precipice.rejected.Rejected;
+import net.uncontended.precipice.rejected.RejectedException;
 import net.uncontended.precipice.rejected.Unrejectable;
+import net.uncontended.precipice.semaphore.LongSemaphore;
+import net.uncontended.precipice.timeout.PrecipiceTimeoutException;
 import org.asynchttpclient.AsyncCompletionHandler;
 import org.asynchttpclient.AsyncHttpClient;
 import org.asynchttpclient.Request;
@@ -33,9 +37,12 @@ import org.mockito.Captor;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNull;
+import java.io.IOException;
+import java.util.concurrent.TimeoutException;
+
+import static org.junit.Assert.*;
 import static org.mockito.Matchers.same;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
 public class HttpAsyncServiceTest {
@@ -50,15 +57,16 @@ public class HttpAsyncServiceTest {
     private ArgumentCaptor<AsyncCompletionHandler> handlerCaptor;
 
     private HttpAsyncService service;
-    private GuardRail<HTTPResult, Unrejectable> guardRail;
+    private GuardRail<HTTPResult, Rejected> guardRail;
 
     @Before
     public void setUp() {
         MockitoAnnotations.initMocks(this);
-        GuardRailBuilder<HTTPResult, Unrejectable> builder = new GuardRailBuilder<>();
+        GuardRailBuilder<HTTPResult, Rejected> builder = new GuardRailBuilder<>();
         guardRail = builder.name("HTTP Client")
                 .resultMetrics(new MetricCounter<>(HTTPResult.class))
-                .rejectedMetrics(new MetricCounter<>(Unrejectable.class))
+                .rejectedMetrics(new MetricCounter<>(Rejected.class))
+                .addBackPressure(new LongSemaphore<>(Rejected.MAX_CONCURRENCY_LEVEL_EXCEEDED, 1))
                 .build();
         service = new HttpAsyncService(guardRail, client);
     }
@@ -80,39 +88,61 @@ public class HttpAsyncServiceTest {
         assertEquals(1, guardRail.getResultMetrics().getMetricCount(HTTPResult.SUCCESS));
     }
 
-//    @Test
-//    public void testErrorRequest() throws Exception {
-//        PrecipiceFuture<Response> f = service.submitRequest(request);
-//        verify(client).executeRequest(same(request), handlerCaptor.capture());
-//
-//        assertEquals(Status.PENDING, f.getStatus());
-//
-//        AsyncCompletionHandler completionHandler = this.handlerCaptor.getValue();
-//
-//        IOException exception = new IOException();
-//        completionHandler.onThrowable(exception);
-//
-//        assertNull(f.result());
-//        assertEquals(exception, f.error());
-//        assertEquals(Status.ERROR, f.getStatus());
-//        assertEquals(1, service.getActionMetrics().getMetricCountForTimePeriod(Metric.ERROR, 1, TimeUnit.SECONDS));
-//    }
-//
-//    @Test
-//    public void testTimeoutRequest() throws Exception {
-//        PrecipiceFuture<Response> f = service.submitRequest(request);
-//        verify(client).executeRequest(same(request), handlerCaptor.capture());
-//
-//        assertEquals(Status.PENDING, f.getStatus());
-//
-//        AsyncCompletionHandler completionHandler = this.handlerCaptor.getValue();
-//
-//        TimeoutException exception = new TimeoutException();
-//        completionHandler.onThrowable(exception);
-//
-//        assertNull(f.result());
-//        assertNull(f.error());
-//        assertEquals(Status.TIMEOUT, f.getStatus());
-//        assertEquals(1, service.getActionMetrics().getMetricCountForTimePeriod(Metric.TIMEOUT, 1, TimeUnit.SECONDS));
-//    }
+    @Test
+    public void testErrorRequest() throws Exception {
+        PrecipiceFuture<HTTPResult, Response> f = service.submitRequest(request);
+        verify(client).executeRequest(same(request), handlerCaptor.capture());
+
+        assertNull(f.getResult());
+
+        AsyncCompletionHandler completionHandler = this.handlerCaptor.getValue();
+
+        IOException exception = new IOException();
+        completionHandler.onThrowable(exception);
+
+        assertNull(f.getValue());
+        assertEquals(exception, f.getError());
+        assertEquals(HTTPResult.ERROR, f.getResult());
+        assertEquals(1, guardRail.getResultMetrics().getMetricCount(HTTPResult.ERROR));
+    }
+
+    @Test
+    public void testTimeoutRequest() throws Exception {
+        PrecipiceFuture<HTTPResult, Response> f = service.submitRequest(request);
+        verify(client).executeRequest(same(request), handlerCaptor.capture());
+
+        assertNull(f.getResult());
+
+        AsyncCompletionHandler completionHandler = this.handlerCaptor.getValue();
+
+        TimeoutException exception = new TimeoutException();
+        completionHandler.onThrowable(exception);
+
+        assertNull(f.getValue());
+        assertTrue(f.getError() instanceof PrecipiceTimeoutException);
+        assertEquals(HTTPResult.TIMEOUT, f.getResult());
+        assertEquals(1, guardRail.getResultMetrics().getMetricCount(HTTPResult.TIMEOUT));
+    }
+
+    @Test
+    public void testRejected() throws Exception {
+        service.submitRequest(request);
+        verify(client).executeRequest(same(request), handlerCaptor.capture());
+        try {
+            service.submitRequest(request);
+            fail("Should have been rejected.");
+        } catch (RejectedException e) {
+        }
+
+
+        AsyncCompletionHandler completionHandler = this.handlerCaptor.getAllValues().get(0);
+        completionHandler.onCompleted(response);
+
+
+        try {
+            service.submitRequest(request);
+        } catch (RejectedException e) {
+            fail("Should not have been rejected.");
+        }
+    }
 }

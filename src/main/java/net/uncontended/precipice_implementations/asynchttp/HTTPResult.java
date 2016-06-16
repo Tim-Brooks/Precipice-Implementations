@@ -4,17 +4,23 @@ import net.uncontended.precipice.Failable;
 
 public enum HTTPResult implements Failable {
 
-    SUCCESS,
-    TIMEOUT,
-    ERROR;
+    SUCCESS(false),
+    TIMEOUT(true),
+    ERROR(true);
+
+    private final boolean isFailure;
+
+    private HTTPResult(boolean isFailure) {
+        this.isFailure = isFailure;
+    }
 
     @Override
     public boolean isFailure() {
-        return false;
+        return isFailure;
     }
 
     @Override
     public boolean isSuccess() {
-        return false;
+        return !isFailure;
     }
 }
